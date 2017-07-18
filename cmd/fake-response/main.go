@@ -53,9 +53,8 @@ func main() {
 	fmt.Println("Start Fake Response.")
 
 	t := tcpstream.Thread{}
-	var processingEndpoint string
-	t.SrcToDstHook = func(b []byte) []byte {
-		processingEndpoint = ``
+	processingEndpoints := map[int]string{}
+	t.SrcToDstHook = func(id, seq int, b []byte) []byte {
 		group := endpointRegex.FindSubmatch(b)
 		if len(group) <= 1 {
 			return b
@@ -64,7 +63,7 @@ func main() {
 		endpoint := string(group[1])
 		for expectEndpoint, _ := range spec.Endpoints {
 			if endpoint == expectEndpoint {
-				processingEndpoint = endpoint
+				processingEndpoints[id] = endpoint
 				break
 			}
 		}
@@ -72,8 +71,9 @@ func main() {
 		return b
 	}
 
-	t.DstToSrcHook = func(b []byte) []byte {
-		if len(processingEndpoint) <= 0 {
+	t.DstToSrcHook = func(id, seq int, b []byte) []byte {
+		endpoint, ok := processingEndpoints[id]
+		if !ok {
 			return b
 		}
 
@@ -83,13 +83,13 @@ func main() {
 		}
 
 		resHeaders := string(group[1])
-		replaced := spec.Endpoints[processingEndpoint]
+		replaced := spec.Endpoints[endpoint]
 		contentLen := len([]byte(replaced))
 
 		resHeaders = contentLengthRegex.ReplaceAllString(resHeaders, fmt.Sprintf("Content-Length: %d", contentLen))
 
 		resBody := fmt.Sprintf("%s\r\n\r\n%s\n", resHeaders, replaced)
-		fmt.Println("Replaced: " + processingEndpoint)
+		fmt.Println("Replaced: " + endpoint)
 		return []byte(resBody)
 	}
 
